@@ -1,0 +1,150 @@
+```{r}
+#install.packages("vctrs")
+library(tidyverse)
+library(carData)
+library(dplyr)
+#?Chile
+df <- Chile
+```
+#Q2
+```{r}
+missingness <- df %>%
+  summarise_all(funs(sum(is.na(.))/length(.))) %>%
+  t() %>%
+  as.data.frame() %>%
+  rename(Percentage = 1)
+print(missingness)
+```
+```{r}
+df <- df[!is.na(df$vote),]
+```
+2.a.i.
+Imputing values for the response variable may introduce bias into the model. The missingness of the response variable may be related to other variables in the dataset. Second, this can decrease the variability of the data. This can impact the accuracy of the model's predictions and the model's ability to capture the true relationship between the predictors and the response.
+```{r}
+low_miss <- names(df)[colSums(is.na(df))/nrow(df) < 0.01]
+for (var in low_miss) {
+  df <- df[!is.na(df[[var]]),]
+}
+low_miss
+```
+ii. Variables with less than 1% missingness: "region" "population" "sex"  "age"  "education"  "statusquo"  "vote" 
+```{r}
+high_miss <- names(df)[colSums(is.na(df))/nrow(df) > 0.01]
+for (var in high_miss) {
+  df[[var]][is.na(df[[var]])] <- "NA_VALUE"
+}
+high_miss
+```
+iii. Variables with more than 1% missingness: "income"
+1. Because "NA" also can represent a specific condition or indicate a specific category.
+```{r}
+str(df)
+```
+
+#Q3
+The variable 'income' in this dataset currently seen as characters.
+```{r}
+df$income <- factor(df$income)
+str(df)
+```
+
+#Q4
+```{r}
+df$statusquo <- factor(df$statusquo)
+
+bin_n <- 5
+bins <- df %>% mutate(income = as.numeric(income), 
+                      income_bin = cut(income, breaks = bin_n, labels = c("Very Low", "Low", "Medium", "High", "Very High"), include.lowest = TRUE, ordered_result = TRUE))
+
+table(bins$income_bin)
+```
+b.
+Equal width binning refers to dividing the range of a variable into equally sized bins, while equal frequency binning is usually achieved by sorting the data and dividing it.
+The reason equal-frequency binning is better in some cases is that it ensures that each bin contains roughly the same number of observations, which is useful for variables with skewed distributions or outliers.
+
+#Q5
+```{r}
+set.seed(07575556)
+df <- slice_sample(df, prop=1)
+train <- slice_head(df, prop=0.6)
+valid <- slice_tail(df, prop=0.4)
+```
+
+#Q6
+```{r}
+library(ggplot2)
+variables <- setdiff(names(train), "vote")
+
+for (var in variables) {
+  plot <- ggplot(train, aes_string(x = var, fill = "vote")) +
+    geom_bar(position = "fill") +
+    theme_minimal() +
+    labs(title = paste0("Proportional Barplot: ", var),
+         x = var,
+         y = "Proportion",
+         fill = "Vote")
+  print(plot)
+}
+```
+a.
+According to the bar chart, I choose to drop the variable "statusquo".
+```{r}
+train <- train[, !(names(train) %in% "statusquo")]
+valid <- valid[, !(names(valid) %in% "statusquo")]
+```
+
+#Q7
+```{r}
+library(e1071)
+nb <- naiveBayes(vote ~ ., data=train)
+print(nb)
+```
+#Q8
+```{r}
+#install.packages("caret")
+library(caret)
+pred_train <- predict(nb, train)
+pred_valid <- predict(nb, valid)
+
+matrix_train <- confusionMatrix(pred_train, train$vote)
+matrix_valid <- confusionMatrix(pred_valid, valid$vote)
+
+cat("Accuracy on training set: ", matrix_train$overall["Accuracy"], "\n")
+cat("Accuracy on validation set: ", matrix_valid$overall["Accuracy"], "\n")
+```
+The validation set performs better than the training set.
+
+#Q9
+The naive baseline is a simple benchmark method that classifies all samples based on the most frequently occurring categories in the training set. It can be used as a benchmark to compare the performance of other more complex classification methods.
+```{r}
+baseclass <- names(which.max(table(train$vote)))
+
+pred_base <- rep(baseclass, nrow(train))
+
+pred_base <- factor(pred_base, levels = levels(train$vote))
+
+matrix_base <- confusionMatrix(pred_base, train$vote)
+
+accuracy_base <- matrix_base$overall["Accuracy"]
+accuracy_base
+```
+a. The naive rule accuracy is lower than our model’s accuracy.
+
+#10
+```{r}
+pred_probs <- predict(nb, newdata = valid, type = "raw")
+
+subset <- valid[order(pred_probs[,"Y"], decreasing = TRUE), ][1:100, ]
+
+number_yes <- sum(subset$vote == "Y")
+number_yes
+```
+```{r}
+accuracy_overall <- mean(pred_valid == valid$vote)
+accuracy_subset <- mean(subset$vote == "Y")
+
+compare <- accuracy_subset/accuracy_overall
+compare
+```
+a. Among those 100 records, there are 59 person actually voted yes. And the accuracy for these predictions is higher than the overall model.
+b. If a political party is provided with this information, they can identify the group most likely to vote "yes". Then they can focus their efforts on this group of voters, targeting them with specific campaign messages and appeals that are more likely to resonate. Maximize their resources to achieve a higher success rate.

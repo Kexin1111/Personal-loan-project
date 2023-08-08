@@ -1,0 +1,131 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+#Queation1+2:
+```{r}
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+df <- read.csv("C:/Users/1/Desktop/apartments_toronto.csv")
+str(df)
+```
+#The function gives us the structure of the data frame, and displays the object's type, length, dimension, element types and so on. The dataframe contains 11651 rows and 40 columns.
+#Question3: 
+```{r}
+df <- df %>% filter(WARD == '21')
+nrow(df)
+```
+#The dataframe contains 439 rows and 40 columns now.
+#Question4:
+```{r}
+is.na(df)
+sum(is.na(df))
+
+mis_n <- colSums(is.na(df))
+mis_p <- round(mis_n / nrow(df) * 100, 2)
+mis_table <- data.frame(mis_n, mis_p)
+view(mis_table)
+
+mis_varia <- mis_table %>% filter(mis_n != 0)
+mis_varia
+```
+#a. Using is.na() function, the 'TURE' in the displayed table is the NA value. The total number of NAs is 1020.
+#b.'YEAR_BUILT' is provided by the Building Owners/Managers, so it may not be provided due to human error. 'GARBAGE_CHUTE_ROOMS' represents the condition of the garbage room in the building, but there may not be a garbage room in the building, so it leads to the NA value. Similarly 'STORAGE_AREAS_LOCKERS' is the same, there may be no storage area in the building.
+#Question5:
+```{r}
+str(df$EVALUATION_COMPLETED_ON)
+df$EVALUATION_COMPLETED_ON <- ymd(df$EVALUATION_COMPLETED_ON)
+sum(month(df$EVALUATION_COMPLETED_ON) == 2)
+```
+#a.The variable 'EVALUATION_COMPLETED_ON'contains dates. Its type is character and is seen as a string.
+#b.In Scarborough Centre, there are 8 buildings that were made in my birth month February.
+#Question6:
+```{r}
+median(df$CONFIRMED_STOREYS)
+mean(df$CONFIRMED_STOREYS)
+
+eval_3 <- df %>% filter(RESULTS_OF_SCORE == "Evaluation needs to be conducted in 3 years") 
+perc_eval_3 <- round(nrow(eval_3)/nrow(df)*100,2)
+perc_eval_3
+
+old_buil <- min(df$YEAR_BUILT, na.rm=T)  
+old_buil
+
+old_score <- df %>% filter(YEAR_BUILT == old_buil) %>%
+  summarize(mean_score = mean(SCORE))
+old_score
+```
+
+#a.I think "Ward" should be considered a categorial variable, becasue it is a variable that groups areas of Toronto. For example, the number 21 does not have any numerical significance, but it represents the Scarborough Centre area of Toronto.
+#b.The median number of confirmed storeys is  6 and the mean number is 6.95. Their difference is due to the presence of relatively higher buildings pulling up the average.
+#c.The percentage is 17.54%. 
+#d.The oldest buildings are built in 1950. The overall evaluation score is 71.43.
+#Question7:
+```{r}
+Season <- quarter(df$EVALUATION_COMPLETED_ON)
+df <- df %>% 
+  mutate(Season = recode(Season, 
+                         "1" = "Winter", 
+                         "2" = "Spring", 
+                         "3" = "Summer", 
+                         "4" = "Fall"))
+```
+#Question8:
+```{r}
+ggplot(data=df) + geom_bar(aes(x=Season),fill='pink') + 
+  ggtitle(" Completed Evaluations During Each Season")
+```
+#Fall is the season with the highest number of completed evaluations and spring is the lowest. This indicates that most of the evaluation projects are done in the fall, some will be delayed until the winter, and very few but still some will be delayed until the next spring.
+#Question9:
+```{r}
+ggplot(data=df) + geom_histogram(aes(x=SCORE), bins = 25, 
+                                 color = 'white',
+                                 fill = 'pink')
+```
+#In my ward, the evaluation scores for construction were distributed between 50-100, with most of those in the range of 80.
+#Question10:
+```{r}
+ggplot(data=df) + geom_histogram(aes(x=SCORE), bins = 25, 
+                                 color = 'white',
+                                 fill = 'pink') + 
+  facet_wrap(~ RESULTS_OF_SCORE)
+```
+#The largest number of buildings need to be evaluated in 2 years, with little difference in the number of buildings evaluated in 1 and 3 years. When the score value is between 50-65, "Score Results" outputs the result 'Evaluation needs to be conducted in 1 year'; when the score value is between 65- 85, "Score Results" outputs 2 years; when the score value is between 85-00, "Score Results ' outputs 3 years.
+#Question11:
+```{r}
+df_street <- df %>% 
+  group_by(SITE_ADDRESS) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count)) %>% 
+  slice(1:5) %>%
+  inner_join(df, by = "SITE_ADDRESS")
+df_street
+```
+# In my ward, there are 6 streets that have the largest number of buildings, that is 5. So in this case, I can't choose "top_n(5,count)", it will output the data of 6 streets.
+```{r}
+ggplot(data=df_street) + geom_point(aes(x=YEAR_BUILT, y=SCORE,color=as.factor(SITE_ADDRESS)))
+```
+#The interesting thing I saw was that the buildings on the same street were all built in the same year, but their scores of evaluation were also quite different.
+#Question12:
+```{r}
+install.packages(leaflet)
+library(leaflet)
+
+m <- leaflet() %>% 
+  addTiles() %>%  
+  addCircles(lng=df$LONGITUDE, lat=df$LATITUDE)
+m  # Print the map
+
+```
+#Question13:
+```{r}
+m <-leaflet() %>% 
+  addTiles() %>%  
+  addCircles(lng=df$LONGITUDE, lat=df$LATITUDE) %>% 
+  addProviderTiles(providers$OpenMapSurfer.Roads)
+m  # Print the map
+```
+

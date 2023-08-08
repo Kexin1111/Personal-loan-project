@@ -1,0 +1,111 @@
+```{r}
+#install.packages("arules")
+library(tidyverse)
+library(arules)
+data(Groceries)
+```
+```{r}
+?Groceries
+summary(Groceries)
+```
+Q1.The class of "Groceries" is transaction in itemMatrix. It has 9835 rows and 169 columns. 
+```{r}
+frequence <- sort(itemFrequency(Groceries), decreasing = TRUE)
+barplot(frequence[1:12], col = "skyblue", main = "Top 12 Most Common Grocery Items",
+        xlab = "Grocery Item", ylab = "Frequency")
+```
+```{r}
+rules_wmilk <- apriori(Groceries,
+                        parameter = list(support=0.05,
+                                         confidence=0.2,
+                                         target="rules"),
+                        appearance = list(lhs="whole milk"))
+inspect(rules_wmilk)
+```
+Left-hand side: {whole milk}
+Right-hand side: {rolls/buns}
+The frequency of whole milk was the highest in the transactions, so I focused on this product to find the items associated with it. For example, when "whole milk" is on the left-hand side and "rolls/buns" is on the right-hand side, its support is 0.0566, indicating that 5.66% of all transactions were purchased with both. In addition, the rule has a confidence level of 0.2216, which means that there is a 22.16% chance that a customer would choose to purchase the rolls/buns product if they had purchased whole milk. Finally, the rule has a lift of 1.2050, which means that the probability of a customer purchasing both whole milk and rolls/buns is 1.21 times higher than the expected probability of purchasing the three items independently.
+```{r}
+rule_wmilk_right <- apriori(Groceries, 
+                            parameter = list(support=0.04, 
+                                             confidence=0.3,
+                                             target="rules"),
+                        appearance = list(rhs="whole milk"))
+inspect(head(sort(rule_wmilk_right, by='confidence', decreasing = T)))
+```
+Left-hand side: {root vegetables}
+Right-hand side: {whole milk}
+For root vegetables on the left-hand side and whole milk on the right-hand side, the rule support of 0.0489 implies that this rule was purchased together in about 4.89% of all transactions. Next, the confidence level is 0.4486, which means that when root vegetables are purchased, there is a 44.87% chance that customers will also purchase whole milk. Finally, the rule has a lift of 1.76, which means that the probability of buying root vegetables and whole milk together is 1.76 times higher than what would be expected when purchased independently.
+
+Q4. 
+This model can bring information to grocery stores like Star Market about the association of customer items, helping them develop effective marketing strategies. For example, a lift rate of nearly 21% for whole milk on the left-hand side and rolls on the right-hand side means that the association between the two is beneficial, and a bundle consisting of these items can effectively encourage customers to buy more products. In this case, Star Market should consider popping up recommendations about right-hand-side products when customers have already added left-hand-side items to their shopping cart while shopping online, as well as placing these items in the same aisle of the physical store.
+
+```{r}
+#install.packages("arulesViz")
+library(arulesViz)
+plot(rules_wmilk[c(1,2,3),], method = "scatterplot", measure = "lift")
+```
+The scatter plot shows the first three rules with whole milk on the left hand side, which helps us to visualize the relationship between these different rules. Rule 1 has the largest boost, meaning that it is more useful in understanding the association of item sets, but it does not have the highest confidence level, as Rule 3 has a higher confidence level and boost value.
+```{r}
+plot(rules_wmilk[c(1,2,3),], method="graph", measure = "lift", engine="htmlwidget")
+```
+The graph shows the relationship between the three rules and the difference in the importance of the rules. The support and confidence of the rules are distinguished by the difference in the color of the lines and the size of the graph.
+
+#Task 2:
+```{r}
+df2 <- read.csv("/Users/xikexin/Desktop/tiktok_top_1000.csv")
+```
+The dataset have 1000 rows and 11 columns. 
+```{r}
+set.seed(7575556)
+sample <- head(slice_sample(df2, prop = 1), 25)
+```
+```{r}
+str(sample)
+```
+The data should be scaled, because the numeric variables have different units. Some of them are length measurements, some of them are weight measures. 
+```{r}
+sample2 <- scale(sample[,sapply(sample, is.numeric)])
+```
+```{r}
+row.names(sample2) <- sample$Account
+d <- dist(sample2)
+#?hclust
+h1 <- hclust(d, method="complete") 
+plot(h1, hang=-1, ann = FALSE)
+```
+b) There are 4 clusters. 
+```{r}
+cl <- data.frame(cutree(h1, k=4))
+cl
+```
+```{r}
+#install.packages("factoextra")
+library(factoextra)
+fviz_dend(h1, k=4)
+```
+```{r}
+colnames(sample2)
+```
+```{r}
+cluster_label <- cl$cutree.h1..k...4.
+sample$cluster <- cluster_label
+
+sumstats <- sample %>%
+  group_by(cluster) %>%
+  summarize(Avg_Rank = mean(Rank),
+            Avg_Subscribers = mean(Subscribers.count),
+            Avg_Views = mean(Views.avg.),
+            Avg_Likes = mean(Likes.avg.),
+            Avg_Comment = mean(Comments.avg.),
+            Avg_Shares = mean(Shares.avg.))
+sumstats
+```
+According to the summary statistics, cluster 1 has extremely high average subscribers but low average shares, while cluster 3 has the highest average shares, almost 10 times the average shares of the other clusters, but cluster 3 also has the lowest average rank and the lowest average subscribers. Cluster 4 has far more viewers but the lowest likes, comments and shares.
+```{r}
+sample$Account
+sample$cluster[sample$Account == "aviranisha"]
+members <- sample[sample$cluster == "3", ]
+members
+```
+The other members in cluster 3 are not as high rank as the artist aviranisha and their subscriptions are generally not very high, even much lower than aviranisha's, but their shares are 10 or even 40 times higher than aviranisha's. This means that the other members do not have as many loyal viewers and long-term subscribers as aviranisha, and their content is likely to be short-term information that viewers will be interested in sharing, suggesting that serial videos could be released to increase the number of subscribers

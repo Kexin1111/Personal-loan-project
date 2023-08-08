@@ -1,0 +1,189 @@
+#Q1/2
+```{r}
+#install.packages("Ecdat")
+library(Ecdat)
+library(tidyverse)
+library(dplyr)
+data("Caschool")
+#?Caschool
+str(Caschool)
+```
+In this dataset, "district code","county","district","grade span of district" are categorical variables, others are numeric variables.
+
+#Q3
+```{r}
+#common_c <- names(sort(table(Caschool$county),decreasing = TRUE)[1:16])
+common_c <- Caschool %>% group_by(county) %>% 
+  summarize(count = n()) %>% 
+  arrange(desc(count)) %>% 
+  top_n(16)
+df <- Caschool %>% filter(county %in% common_c)
+```
+The dataframe now contains 271 rows.
+
+#Q4
+```{r}
+set.seed(699)
+train <- slice_head(Caschool, prop=0.6)
+valid <- slice_tail(Caschool, prop=0.4)
+```
+This allows us to evaluate the performance of the model on data that has not been seen before. This helps avoid overfitting, which can occur when models are too complex and fit too closely to the training data, resulting in poor performance on new, unseen data.
+
+#Q5
+```{r}
+ggplot(data=train) + geom_point(aes(x=mealpct,y=readscr)) + 
+  geom_smooth(aes(x=mealpct,y=readscr),method="lm", se=FALSE)
+```
+There was a negative correlation between the variables 'mealpct' and 'readscr', the higher the percentile of students in the district who are eligible for reduced-price lunch, the student's average reading score is lower. The intuitive meaning is to indicate that in poorer districts, students have lower educational attainment and reading levels.
+
+#Q6
+```{r}
+cor(train$readscr,train$mealpct)
+cor.test(train$readscr,train$mealpct)
+```
+This correlation is -0.7985899, which means it is strongly negative. The correlation is significant because the p-value is less than 0.05.
+
+#Q7
+```{r}
+model <- lm(formula = readscr~mealpct, data=train)
+summary(model)
+```
+#Q8
+```{r}
+min(model$residuals)
+max(model$residuals)
+```
+The minimum residual values is -23.65886, maximum is 27.7771.
+```{r}
+max_residual <- which.max(model$residuals)
+max_observ <- train[max_residual, ]
+
+avg_act_max <- max_observ$readscr
+avg_act_max
+avg_predict_max <- predict(model, newdata = max_observ)
+avg_predict_max
+residual_a <- avg_act_max - avg_predict_max
+```
+a. In Siskiyou county, its actual average reading score is 655.1, the model predict that it would be 627.3229, and residual is 27.8, which is calculated by actual value minus predicted value.
+```{r}
+min_residual <- which.min(model$residuals)
+min_observ <- train[min_residual, ]
+
+avg_act_min <- min_observ$readscr
+avg_act_min
+avg_predict_min <- predict(model, newdata = min_observ)
+avg_predict_min
+residual_b <- avg_act_min - avg_predict_min
+```
+b. In Tulare county, its actual average reading score is 610, the model predict that it would be 633.6589, and residual is -23.7, which is calculated by actual value minus predicted value.
+c. While there may be a relationship between  'mealpct' and 'readscr', there may be many other factors that influence reading scores. It is important to consider multiple variables when attempting to predict reading performance.
+
+#Q9
+```{r}
+model
+
+x <- 100
+y <- 672.604-0.505*x
+y
+```
+The equation is Y=672.604-0.505*x.
+Input value of mealpct = 100, 
+readscr = 672.604 - 0.505 * 100,
+readscr = 622.104
+
+#Q10
+```{r}
+library(forecast)
+pred.train <- predict(model, train)
+pred.valid <- predict(model, valid)
+accuracy(pred.train, train$readscr)
+accuracy(pred.valid, valid$readscr)
+```
+The purpose is to determine if the model is overfitting to the training data or if it has the ability to make accurate predictions on new data. Low RMSE and MAE on the training set but high RMSE and MAE on the validation set indicate that the model over-fits the training data.
+#Q11
+```{r}
+sd(train$readscr)
+```
+RMSE in the valid dataset is 14.89435, but the standard deviation of reading scores is 14.13379, the large RMSE of the model indicates that the model performs poorly in predicting variations in the data and is unable to capturing some of the variability in the data.
+
+#Multiple Linear Regression:
+#Q1
+```{r}
+colnames(train)
+table(train$distcod)
+table(train$county)
+table(train$district)
+table(train$grspan)
+train <- train %>% select("grspan", "enrltot", "teachers", "calwpct", "mealpct", "computer","compstu", "expnstu", "str", "avginc", "elpct", "readscr")
+```
+```{r}
+table(valid$distcod)
+table(valid$county)
+table(valid$district)
+table(valid$grspan)
+valid <- valid %>% select("grspan", "enrltot", "teachers", "calwpct", "mealpct", "computer","compstu", "expnstu", "str", "avginc", "elpct", "readscr")
+```
+#Q2
+```{r}
+train1 <- train %>% select("enrltot", "teachers", "calwpct", "mealpct", "computer","compstu", "expnstu", "str", "avginc", "elpct", "readscr")
+
+cor(train1)
+```
+Yes, there are variable relationships.
+```{r}
+train2 <- train1 %>% select("enrltot", "calwpct", "mealpct", "compstu", "expnstu", "str", "avginc", "elpct", "readscr")
+valid2 <- valid %>% select("enrltot", "calwpct", "mealpct", "compstu", "expnstu", "str", "avginc", "elpct", "readscr")
+
+cor(train2)
+```
+"There is a correlation between the three variables "enrltot", "teachers" and "computer" and two need to be removed. I chose to remove the "computer" and "teachers" variables because both of them have alternative variables
+
+#Q3
+Dummy variables are variables that are used to represent categorical data in statistical models. They are binary variables that take the value of 1 or 0. The purpose of using dummy variables is to allow us to represent category variables as numerical variables in order to retain information about the categories. 
+
+#Q4
+```{r}
+lm_read <- lm(data=train2,formula=readscr~.)
+summary(lm_read)
+
+lmr_backward <- step(lm_read, direction="backward")
+summary(lmr_backward)
+```
+```{r}
+SST <- sum((train2$readscr-mean(train2$readscr))^2)
+SST
+
+SSE <- sum(lm_read$residuals^2)
+SSR <- SST - SSE
+SSR
+
+SSR/SST
+```
+SST is 50140.75, SSR is 37763.2, SSR/SST is 0.753144, the ratio can also be found in the summary output of the regression model under the "Multiple R-squared" value.
+
+#Q6
+```{r}
+#install.packages("visualize")
+library(visualize)
+visualize.t(stat=c(-7.495, 7.495), df=243, section = "bounded")
+```
+The t-value for the chosen numeric input 'elpct' is -7.495. According to the p-value(1), 100% of the curve is shaded. The p-value is large, supporting the null hypothesis and opposing the alternative hypothesis.
+
+#Q7:
+Attributes of fictional school district:
+ mealpct: 0.3
+ compstu: 0.2
+ expnstu: 3000
+ avginc: 12
+ elpct: 0.5
+Average test score = 645.7 - 0.3296*0.3 + 16.68*0.2 + 2.609*0.001*3000 + 0.4757*12 - 0.2388*0.5 = 662.35312.
+
+#Q8
+```{r}
+accuracy(train2$readscr, predict(lmr_backward))
+```
+```{r}
+accuracy(valid2$readscr, predict(lmr_backward, newdata = valid2))
+```
+Since the respective values are smaller, indicating that the model performs better on the training data set but poorly on the validation set, it may be overfitting, indicating that it is too complex to fit the training data too well and does not generalize well to new data.
+As for the difference in accuracy between the SLR and MLR models, the latter is expected to have higher accuracy because it takes into account more predictors and captures more complex relationships between them. However, this higher accuracy comes at the cost of increased complexity and risk of overfitting.
