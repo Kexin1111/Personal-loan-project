@@ -1,0 +1,853 @@
+---
+title: "AD 699 Final Project"
+author: "Kexin Xi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 70), tidy = TRUE,
+                      message = FALSE, warning = FALSE)
+options(scipen = 1, digits = 4, width = 70)
+options(tinytex.verbose = TRUE)
+```
+### Part 1: Data preparation and exploration + problem statement
+Data set achieved from:
+https://www.kaggle.com/datasets/teertha/personal-loan-modeling
+#### Dataset Description
+1. ID: Customer ID
+2. Age: Customer's age in completed years 
+3. Experience: Number of years of professional experience
+4. Income: Annual income of the customer ($000)
+5. ZIP Code: Home Address ZIP code
+6. Family: Family size of the customer
+7. CCAcg: Avg. spending on credit cards per month ($000)
+8. Education: Education Level. 1: Undergrad; 2: Graduate; 3: Advanced/Professional
+9. Mortgage: Value of house mortgage if any. ($000)
+10. Personal Loan: Did this customer accept the personal loan offered in the last campaign? 
+(Target Variable)
+11. Securities Account: Does the customer have a securities account with the bank?
+12. CD Account: Does the customer have a certificate of deposit (CD) account with the bank?
+13. Online: Does the customer use internet banking facilities?
+14. Credit Card: Does the customer use a credit card issued by this Bank?
+
+```{r}
+# All required libraries for this project
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(FNN)
+library(rpart)
+library(rpart.plot)
+library(tidyr)
+library(GGally) 
+library(e1071)
+library(Hmisc)
+library(corrplot)
+```
+
+#### Data Preparation and Exploration
+```{r}
+# Read data set
+df <- read.csv("Bank_Personal_Loan_Modelling.csv")
+colnames(df)
+
+# i). Structure of the data set
+# Identify categorical and numeric variables 
+str(df)
+```
+1. Categorical variable: "Education", "Personal.Loan", "Securities.Account", "CD.Account", "Online", "CreditCard"
+2. Numerical variable: "Age", "Experience", "Income", "CCAvg", "Mortgage", "Family"
+
+```{r}
+# ii). Missing values
+# check if there any NAs
+any(is.na(df)) 
+```
+
+```{r}
+# iii). Summary statistics
+# Compute basic summary statistics: mean, median,range, standard deviation to get an overall sense of the data distribution
+summary(df)
+
+sd(df$Age)
+sd(df$Experience)
+sd(df$Income)
+sd(df$Family)
+sd(df$CCAvg)
+sd(df$Mortgage)
+
+# Drop 'ID' and 'Zip.Code'
+df1 <- df[,-c(1,5)]
+
+# Remove rows which 'Experience' less than 0
+min(df1$Experience)
+df_cleaned <- subset(df1, Experience >=0)
+
+# convert target variable into a factor
+df_cleaned$Personal.Loan <- as.factor(df_cleaned$Personal.Loan)
+```
+1. We drop 'ID' and 'Zip.Code' as these variables do not provide any meaningful 
+information for predicting the target variable. Also, 'ID' is the unique identifier, and 
+'Zip.Code' contains too many unique values.
+
+2. We choose to remove rows with "Experience" less than 0 because negative values
+for professional experience do not make logical sense. We may consider correcting
+these values but we are not able to determine the cause of the error, and the 
+number of affected rows is relatively small (1.04%). 
+
+```{r}
+# iv). Correlations
+# Calculate correlation coefficients to measure the strength and direction of 
+# linear relationships between pairs of numeric variables.
+df_cleaned_numeric = df_cleaned %>% select("Age", 
+                                           "Experience", 
+                                           "Income", 
+                                           "CCAvg", 
+                                           "Mortgage", 
+                                           "Family")
+cor(df_cleaned_numeric)
+```
+* Decision trees work by recursively partitioning the data based on the predictor variables, 
+so they are more robust to multicollinearity than linear regression models.
+* Multicollinearity is not a major concern when using the k-nearest neighbors (KNN) algorithm,
+as it is a non-parametric method and does not rely on linear relationships or assumptions about 
+the distribution of predictor variables.
+* Multicollinearity is not a major concern when using the Naive Bayes algorithm,
+as it is a probabilistic classifier with the assumption of independence between the features.
+
+```{r}
+# v). Distribution of target variable
+table(df_cleaned$Personal.Loan)
+loan_percent <- sum(df_cleaned$Personal.Loan == 1)/nrow(df_cleaned)
+loan_percent
+```
+In the cleaned data set, there are 9.7% customers accept the personal loan 
+offered in the last campaign. 
+
+#### Problem Statement
+The main objective of this study is to use the bank's personal loan dataset to build classification models in order to accurately identify customers who are likely to accept personal loan offers. In addition, the study aims to understand the key characteristics that distinguish customers who accept personal loans from those who do not, providing valuable insights to refine the bank's marketing strategies and personalized products. And to improve the success rate of converting indebted customers into personal loan customers.
+
+We will use classification models to predict if the new customer will accept or reject the personal loan.
+
+Example of a New Customer: Age=30,Experience=6,Income=55,Family=3, CCAvg=0.5,
+Education=2,Mortgage=0, Securities.Account=0,CD.Account=1,Online=0, CreditCard=1. 
+
+Our target variable is Personal Loan, which is a binary variable where 0 means 
+the customer did not accept a personal loan offer in past activity and 1 means they did.
+
+### Part 2: Descriptive analytics with visualizations
+#### Data Visualization
+```{r}
+# Frequency Chart of Categorical variables
+ggplot(df_cleaned) + 
+  geom_bar(aes(x=as.factor(Personal.Loan), fill=as.factor(Personal.Loan))) + 
+  labs(x="Personal Loan", y="Count", fill="Personal Loan") + 
+  ggtitle("Frequency Chart of Personal Loan")
+ggplot(df_cleaned) + 
+  geom_bar(aes(x=as.factor(Education), fill=as.factor(Education))) + 
+  labs(x="Education", y="Count", fill="Education") + 
+  ggtitle("Frequency Chart of Education")
+ggplot(df_cleaned) + 
+  geom_bar(aes(x=as.factor(Securities.Account), fill=as.factor(Securities.Account))) + 
+  labs(x="Securities.Account", y="Count", fill="Securities.Account") + 
+  ggtitle("Frequency Chart of Securities.Account")
+ggplot(df_cleaned) + 
+  geom_bar(aes(x=as.factor(CD.Account), fill=as.factor(CD.Account))) + 
+  labs(x="CD.Account", y="Count", fill="CD.Account") + 
+  ggtitle("Frequency Chart of CD.Account")
+ggplot(df_cleaned) + 
+  geom_bar(aes(x=as.factor(Online), fill=as.factor(Online))) + 
+  labs(x="Online", y="Count", fill="Online") + 
+  ggtitle("Frequency Chart of Online")
+ggplot(df_cleaned) + 
+  geom_bar(aes(x=as.factor(CreditCard), fill=as.factor(CreditCard))) + 
+  labs(x="CreditCard", y="Count", fill="CreditCard") + 
+  ggtitle("Frequency Chart of CreditCard")
+```
+For the initially cleaned data, the distribution of the categorical variables is visualized by the Frequency Chart. It is noticed that since only 9.7% of our dataset receives loans, the rate of having securities account and certificate of deposit (CD) account with the bank is similarly low, but more people use credit cards, indicating that they have the habit of anticipating funds in advance and paying them back regularly. 
+
+```{r}
+#The effect of personal loans on income
+
+ggplot(df_cleaned) + 
+  geom_histogram(aes(x=Income, group=Personal.Loan, fill=Personal.Loan),
+                 color="black", alpha=0.5,
+                 position="identity", bins=30) +
+  labs(title="Histogram of Personal Loans by Income", x="Income", y="Count")
+
+#Add Age factor
+
+ggplot(df_cleaned, aes(x=Age, y=Income, color=factor(Personal.Loan))) +
+geom_point(alpha=0.8) +
+geom_smooth(method="lm", se=FALSE) +
+labs(title="Scatterplot of the Personal Loans by Income and Age", x="Age", y="Income", color="Personal Loan") +
+theme_bw()
+
+#Add Education factor
+
+ggplot(df_cleaned, aes(x=as.factor(Education), y=Income, fill=factor(Personal.Loan))) +
+  geom_boxplot(alpha=0.8) +
+  labs(title="Box Plot of the Personal Loans by Income and Education", x="Education", y="Income", fill="Personal Loan") +
+  theme_bw()
+
+#Add Family factor
+
+ggplot(df_cleaned, aes(x=as.factor(Family), y=Income, fill=factor(Personal.Loan))) +
+  geom_boxplot(alpha=0.8) +
+  labs(title="Box Plot of the Personal Loans by Income and Family", x="Family", y="Income", fill="Personal Loan") +
+  theme_bw() 
+
+```
+Histogram shows that Clients are totally unlikely to take out a personal loan when their income is between $0-70 thousand and more likely to take out a personal loan when their income is between $100 and 200 thousand. It is worth noting that customers with incomes of $200 thousand or more are also less likely to take out loans because they have sufficient funds.
+
+Adding the age factor, the scatter plot reveals that the relationship between income and taking out a personal loan does not differ significantly by age.
+
+Adding the education factor, the box plot shows that the proportion of people unwilling to accept loans is greatest when the education level is undergraduate, but the average income and maximum are higher, that is, a large proportion of this group is not tending to take out loans, despite having a high income. Target groups receiving loans are likely to be skewed towards graduate students and professionals.
+
+Characteristics： 
+The customer accepting loans is of any age with incomes generally above $100 thousand, while the average income of those accepting loans is lower when there are four people in the family than when there are fewer people.
+Customers who do not accept loans almost all have an income of less than $100 thousand, the level of education is more undergraduate, and families are about twice as large with 1 and 2 people than with 3 and 4 people.
+
+```{r}
+# Relationship between numeric variables —— Heatmap & Scatterplot Matrix 
+
+mcor <- cor(df_cleaned_numeric)
+corrplot(mcor, method="shade", shade.col=NA, tl.col="black") +
+  scale_color_gradient2(low = "#8E44AD", mid = "white", high = "#2ECC71") +
+  theme(text = element_text(size = 12, family = "Helvetica"))
+
+numeric_variable <- df_cleaned_numeric %>% select(Age, Experience, Income, CCAvg, Mortgage)
+ggpairs(numeric_variable, mapping = aes(color = factor(df_cleaned$Personal.Loan)), 
+        upper = list(continuous = wrap("points", size = 0.5))) + theme_classic()
+```
+From the heat map and Scatterplot Matrix above, we can see that there is a completely linear relationship between age and experience, and there is a correlation between income and features ['CCAvg', 'Mortgage'].
+
+
+### Part 3: Building Classifiers
+
+#### 1. KNN
+##### Data preparation for KNN
+```{r}
+df_knn <- df_cleaned
+str(df_cleaned)
+```
+
+From the data description, 'Education' is a categorical variable with 3 levels. 
+1: Undergrad; 2: Graduate; 3: Advanced/Professional.
+It's essential to convert this variable into dummy variables to avoid any incorrect interpretation.
+```{r}
+# Convert 'Education' to factor
+df_knn $Education <- as.factor(df_knn $Education)
+
+# Convert 'Education' to dummy variables
+df_knn$Education1 <- ifelse(df_knn$Education == '1',1,0)
+df_knn$Education2 <- ifelse(df_knn$Education == '2',1,0)
+df_knn$Education3 <- ifelse(df_knn$Education == '3',1,0)
+
+# Remove 'Education' column
+df_knn <- df_knn[,-6]
+```
+
+##### Write the customer's information to a data frame
+```{r}
+customer1 <- data.frame(Age=30,Experience=6,Income=55,Family=3, CCAvg=0.5,
+                       Mortgage=0, Securities.Account=0,
+                        CD.Account=1,Online=0,CreditCard=1,
+                       Education1=0,Education2=1,Education3=0)
+```
+
+##### Data Partition
+```{r}
+set.seed(888)
+df_knn<- slice_sample(df_knn, prop=1) # random shuffling
+
+train_index <- round(nrow(df_knn)*0.6)
+
+train <- slice(df_knn, 1:train_index) # 60% for training
+valid <- slice(df_knn, (train_index+1):nrow(df_knn)) # 40% for validation
+``` 
+
+##### Data Normalization, only scale numeric variables
+```{r}
+norm <- preProcess(df_knn[,1:6], method = c("center" , "scale"))
+train_norm <- predict(norm,train)
+valid_norm <- predict(norm,valid)
+customer1_norm <- predict(norm, customer1)
+```
+
+##### Find the optimum k value
+```{r}
+# Choosing k, using valid data set
+acc <-c()
+for(i in 1:20){
+knn.pred<-knn(train=train_norm[,-7],
+test=valid_norm[,-7],
+cl=train_norm$Personal.Loan, k=i)
+acc[i] <-mean(knn.pred==valid_norm$Personal.Loan)
+}
+
+ggplot(mapping = aes((x=1:20), y=acc)) +
+geom_point() + geom_line()
+```
+
+From the line graph, we see that when x=3, we obtain the highest accuracy.
+So, the best k is 3.
+
+##### Apply KNN model
+```{r}
+nn<-knn(train=train_norm[,-7], test=customer1_norm,
+cl=train_norm$Personal.Loan, k=3)
+nn
+```
+From above result, the 3 nearest neighbors of the new customer are in line 
+2623, 1105, 2753.
+
+```{r}
+# Find the nearest neighbors
+neighbors <- train[c(2623, 1105, 2753),]
+neighbors
+```
+##### KNN prediction
+There are 3 0s in the outcome classes. So, customer1 may not accept a 
+personal loan offer.
+
+#### 2. Naive Bayes
+* Requires categorical variables
+* Numerical variable must be binned and converted to categorical
+* Can be used with very large data sets
+
+##### Data Preparation for Naive Bayes
+```{r}
+df_nb <- df_cleaned %>% 
+  mutate(Education = case_when(
+    Education == 1 ~ '1',
+    Education == 2 ~ '2',
+    Education == 3 ~ '3'),
+    
+    Personal.Loan = case_when(
+      Personal.Loan == 1 ~ "Yes",
+      Personal.Loan == 0 ~ "No"),
+    
+    Securities.Account = case_when(
+      Securities.Account == 1 ~ "Yes",
+      Securities.Account == 0 ~ "No"),
+    
+    CD.Account = case_when(
+      CD.Account == 1 ~ "Yes",
+      CD.Account == 0 ~ "No"),
+    
+    Online = case_when(
+      Online == 1 ~ "Yes",
+      Online == 0 ~ "No"),
+    
+    CreditCard = case_when(
+      CreditCard == 1 ~ "Yes",
+      CreditCard == 0 ~ "No"))
+str(df_nb)
+
+# For numeric variables "Age", "Experience", "Income", "CCAvg", "Mortgage", 
+# "Family", bin them into factors
+
+# Bin Mortgage to "Yes" and "No"
+summary(df_cleaned$Mortgage)
+ggplot(data=df_cleaned) + geom_histogram(aes(x=Mortgage))
+df_nb <- df_cleaned %>% 
+  mutate(Mortgage = case_when(
+    Mortgage == 0 ~ "No",
+    Mortgage > 0 ~ "Yes"))
+
+df_nb$Mortgage = as.factor(df_nb$Mortgage)
+table(df_nb$Mortgage)
+
+# Use equal frequency binning for the rest of the numeric variables, 
+# this can ensure that each bin has a similar number of observations, 
+# even if the data is not evenly distributed.
+
+# Choose bins = 4, based on quantiles
+
+# Bin Age
+labels_age = c("24-36", "36-46", "46-55", "55-67")
+df_nb$Age_binned = cut(df_nb$Age, 
+                        breaks = quantile(df_nb$Age), 
+                        labels = labels_age,
+                        include.lowest = TRUE)
+table(df_nb$Age_binned)
+
+# Bin Experience
+labels_experience = c("0-10.8", "10.8-20", "20-30", "30-43")
+df_nb$Experience_binned = cut(df_nb$Experience, 
+                       breaks = quantile(df_nb$Experience), 
+                       labels = labels_experience,
+                       include.lowest = TRUE)
+table(df_nb$Experience_binned)
+
+# Bin Income
+labels_Income = c("8000-39000", "39000-64000", "64000-98000", "98000-224000")
+df_nb$Income_binned = cut(df_nb$Income, 
+                              breaks = quantile(df_nb$Income), 
+                              labels = labels_Income,
+                              include.lowest = TRUE)
+table(df_nb$Income_binned)
+
+# Bin CCAvg
+labels_CCAvg = c("0-700", "700-1500", "1500-2600", "2600-10000")
+df_nb$CCAvg_binned = cut(df_nb$CCAvg, 
+                          breaks = quantile(df_nb$CCAvg), 
+                          labels = labels_CCAvg,
+                          include.lowest = TRUE)
+table(df_nb$CCAvg_binned)
+
+
+
+# Convert characters to factors
+df_nb$Personal.Loan <- as.factor(df_nb$Personal.Loan)
+df_nb$Education <- as.factor(df_nb$Education)
+df_nb$Securities.Account <- as.factor(df_nb$Securities.Account)
+df_nb$CD.Account  <- as.factor(df_nb$CD.Account )
+df_nb$Online <- as.factor(df_nb$Online)
+df_nb$CreditCard <- as.factor(df_nb$CreditCard)
+
+# Convert Family to Categorical
+summary(df_cleaned$Family)
+ggplot(data=df_cleaned) + geom_histogram(aes(x=Family))
+df_nb$Family <- as.factor(df_nb$Family)
+
+str(df_nb)
+
+# Delete numerical columns
+df_nb = df_nb %>% select(-c(Age,
+                    Experience, 
+                    Income, 
+                    CCAvg))
+str(df_nb)
+```
+
+##### Data Partition
+```{r}
+set.seed(888)
+df_nb <- slice_sample(df_nb, prop=1) # random shuffling
+
+train_index_nb <- round(nrow(df_nb)*0.6)
+
+train_nb <- slice(df_nb, 1:train_index_nb) # 60% for training
+valid_nb <- slice(df_nb, (train_index_nb+1):nrow(df_cleaned)) # 40% for validation
+```
+
+##### Data Visualization
+```{r}
+# Make proportional barplots for each one of the prospective input variables. Use Personal.Loan as fill color.
+# 1). Family
+ggplot(data=train_nb) + geom_bar(aes(x = Family,
+                                  fill = Personal.Loan),
+                              position='fill')
+
+# 2). Education
+ggplot(data=train_nb) + geom_bar(aes(x = Education,
+                                  fill = Personal.Loan),
+                              position='fill')
+
+# 3). Mortgage
+ggplot(data=train_nb) + geom_bar(aes(x = Mortgage,
+                                  fill = Personal.Loan),
+                              position='fill')
+# Mortgage seems like it will not have a strong amount of predictive power in a naive Bayes model. 
+# The barplot for "Mortgage" shows a relatively even distribution of votes between each category.
+
+# 4). Securities.Account
+ggplot(data=train_nb) + geom_bar(aes(x = Securities.Account,
+                                  fill = Personal.Loan),
+                              position='fill')
+# Securities.Account seems like it will not have a strong amount of predictive power in a naive Bayes model. 
+# The barplot for "Securities.Account" shows a relatively even distribution of votes between each category.
+
+# 5). CD.Account
+ggplot(data=train_nb) + geom_bar(aes(x = CD.Account,
+                                  fill = Personal.Loan),
+                              position='fill')
+
+# 6). Online
+ggplot(data=train_nb) + geom_bar(aes(x = Online,
+                                  fill = Personal.Loan),
+                              position='fill')
+# Online seems like it will not have a strong amount of predictive power in a naive Bayes model. 
+# The barplot for "Online" shows a relatively even distribution of votes between each category.
+
+# 7). CreditCard
+ggplot(data=train_nb) + geom_bar(aes(x = CreditCard,
+                                  fill = Personal.Loan),
+                              position='fill')
+# CreditCard seems like it will not have a strong amount of predictive power in a naive Bayes model. 
+# The barplot for "CreditCard" shows a relatively even distribution of votes between each category.
+
+# 8). Age_binned
+ggplot(data=train_nb) + geom_bar(aes(x = Age_binned,
+                                  fill = Personal.Loan),
+                              position='fill')
+# Age_binned seems like it will not have a strong amount of predictive power in a naive Bayes model. 
+# The barplot for "Age_binned" shows a relatively even distribution of votes between each category.
+
+# 9). Experience_binned
+ggplot(data=train_nb) + geom_bar(aes(x = Experience_binned,
+                                  fill = Personal.Loan),
+                              position='fill')
+# Experience_binned seems like it will not have a strong amount of predictive power in a naive Bayes model. 
+# The barplot for "Experience_binned" shows a relatively even distribution of votes between each category.
+
+# 10). Income_binned
+ggplot(data=train_nb) + geom_bar(aes(x = Income_binned,
+                                  fill = Personal.Loan),
+                              position='fill')
+
+# 11). CCAvg_binned
+ggplot(data=train_nb) + geom_bar(aes(x = CCAvg_binned,
+                                  fill = Personal.Loan),
+                              position='fill')
+```
+
+##### Apply Naive Bayes Model
+```{r}
+# Remove input variables that are likely to have low predictive power for the output. 
+train_nb <- train_nb %>% select(-c(Mortgage,
+                                   Securities.Account,
+                                   Online,
+                                   CreditCard,
+                                   Age_binned,
+                                   Experience_binned))  
+valid_nb <- valid_nb %>% select(-c(Mortgage,
+                                   Securities.Account,
+                                   Online,
+                                   CreditCard,
+                                   Age_binned,
+                                   Experience_binned))  
+str(train_nb)                         
+
+# Train a Naïve Bayes classifier
+nb = naiveBayes(data = train_nb, Personal.Loan~.)
+nb
+
+# Prediction 
+pred_train_nb = predict(nb,train_nb)
+pred_valid_nb = predict(nb,valid_nb)
+
+# Confusion matrix & accuracy for both the performances of training and validation data
+confusionMatrix(pred_train_nb, train_nb$Personal.Loan) #Accuracy : 0.9579 
+confusionMatrix(pred_valid_nb, valid_nb$Personal.Loan) #Accuracy : 0.956 
+```
+
+##### Naive Bayes Prediction
+```{r}
+# Customer 1 prediction
+customer1 <- data.frame(Age_binned="Early Career",
+                        Experience_binned="0-10.8",
+                        Income_binned="39000-64000",
+                        Family="3", 
+                        CCAvg_binned="0-700",
+                        Mortgage="No", Securities.Account="0",
+                        CD.Account="1",Online="0",CreditCard="1",
+                        Education="2")
+
+customer1_pred <- predict(nb, customer1)
+print(customer1_pred)
+```
+Based on the result of naive bayes prediction, customer1 may not accept a 
+personal loan offer.
+
+#### 3. Decision Tree
+* Trees can handle categorical OR numerical variables as inputs
+* Outcome is binary
+* Easy to use, understand
+* Produce rules that are easy to interpret & implement
+* Variable selection & reduction is automatic
+* Do not require the assumptions of statistical models
+* Can work without extensive handling of missing data
+
+##### Check Naive Baseline
+```{r}
+Prop.Personal.Loan <- prop.table(table(df_cleaned$Personal.Loan))
+Prop.Personal.Loan  
+```
+
+#### Data Preparation for Decision Tree
+```{r}
+df_cleaned_tree = df_cleaned
+
+df_cleaned_tree <- df_cleaned_tree %>% 
+  mutate(Education = case_when(
+    Education == 1 ~ 'Undergrad',
+    Education == 2 ~ 'Graduate',
+    Education == 3 ~ 'Advanced'))
+
+str(df_cleaned_tree)
+
+# Change all categorical variables to factors
+df_cleaned_tree$Education <- as.factor(df_cleaned_tree$Education)
+df_cleaned_tree$Securities.Account <- as.factor(df_cleaned_tree$Securities.Account)
+df_cleaned_tree$CD.Account  <- as.factor(df_cleaned_tree$CD.Account )
+df_cleaned_tree$Online <- as.factor(df_cleaned_tree$Online)
+df_cleaned_tree$CreditCard <- as.factor(df_cleaned_tree$CreditCard)
+
+str(df_cleaned_tree)
+```
+
+##### Data Partition
+```{r}
+# Partition the data set into training (60%) and validation (40%) sets.
+set.seed(88)
+tree.train.index = sample(c(1:nrow(df_cleaned_tree)), size = 0.6*nrow(df_cleaned_tree))
+tree.train = df_cleaned_tree[tree.train.index,]
+tree.valid = df_cleaned_tree[-tree.train.index,]
+```
+
+##### Apply Decision Tree Model
+```{r}
+# Concern of overfitting problem 
+# Pruning the tree with the validation data solves the problem of overfitting
+# 5-fold cross validation, we choose 5 as it's a common choice for the number of 
+# folds, providing a good balance between variance and bias in many cases.
+tree.5fold <- rpart(data = tree.train,
+              formula = Personal.Loan~.,
+              xval=5) 
+printcp(tree.5fold)
+# cp = 0.01 is the best because xerror (0.20) is the smallest
+
+# Create a tree with cp=0.01
+final_tree = rpart(data = tree.train,
+                   formula = Personal.Loan~.,
+                   cp=0.01)
+
+pred_treefinal <- predict(final_tree,tree.valid) 
+
+pred_treefinal_p <- apply(pred_treefinal,FUN=which.max,MARGIN = 1) -1
+pred_treefinal_p = factor(pred_treefinal_p)
+
+# Create a confusion matrix
+confusionMatrix(pred_treefinal_p, tree.valid$Personal.Loan)
+
+# Double check accuracy
+table(pred_treefinal_p, tree.valid$Personal.Loan)
+mean(pred_treefinal_p == tree.valid$Personal.Loan) 
+
+# Plot the classification tree
+prp(final_tree, type=1, extra=1, under=T,
+    box.col=c('gray', 'white')[final_tree$frame$ncompete+1])
+
+```
+
+###### Classification rules
+
+1. IF (Income < 115) AND (CCAvg < 3.1) THEN Class = 0
+2. IF (Income < 115) AND (CCAvg >= 3.1) AND (CD.Account = 0) AND (Education = Advanced,Undergrad) THEN Class = 0
+3. IF (Income < 115) AND (CCAvg >= 3.1) AND (CD.Account = 1) THEN Class = 1
+4. IF (Income < 115) AND (CCAvg >= 3.1) AND (CD.Account = 0) AND (Education = Graduate) AND (CCAvg < 3.9) THEN Class = 0
+5. IF (Income < 115) AND (CCAvg >= 3.1) AND (CD.Account = 0) AND (Education = Graduate) AND (CCAvg >= 3.9) THEN Class = 1
+6. IF (Income >= 115) AND (Education = Undergrad) AND (Family < 3) THEN Class = 0
+7. IF (Income >= 115) AND (Education = Undergrad) AND (Family >= 3) THEN Class = 1
+8. IF (Income >= 115) AND (Education = Graduate,Advanced) THEN Class = 1
+
+##### Customer 1 prediction
+```{r}
+customer1 <- data.frame(Age=30,Experience=6,Income=55,Family=3, CCAvg=0.5,
+                        Mortgage=0, Securities.Account="0",
+                        CD.Account="1",Online="0",CreditCard="1",
+                        Education="Graduate")
+
+customer1_pred <- predict(final_tree, customer1)
+print(customer1_pred)
+```
+Identify classification rules from the pruned tree for customer 1.
+IF (Income < 115) AND (CCAvg < 3.1) THEN Class = 0. So, customer1 may not accept a 
+personal loan offer.
+
+
+#### Accuracy Comparison
+```{r}
+accuracy_knn = mean(nn==valid_norm$Personal.Loan)
+accuracy_naive_bayes = mean(pred_valid_nb == valid_nb$Personal.Loan)
+accuracy_tree = mean(pred_treefinal_p == tree.valid$Personal.Loan) 
+cbind(accuracy_knn, accuracy_naive_bayes,accuracy_tree)
+```
+
+
+
+
+####  Part 4:Clustering
+##### Data preparation for Clustering
+```{r}
+# Scale the numeric variables
+norm_PL_num <- scale(df_cleaned_numeric)
+```
+
+##### Elbow Chart
+```{r}
+# plotting the explained variation (within-cluster sum of squares, WCSS) as a 
+# function of the number of clusters and picking the "elbow point" in the graph
+# Compute the within-cluster sum of squares (WCSS) for different values of k:
+## Set the range of cluster numbers to try
+set.seed(888)
+k_range <- 1:15
+# Initialize a vector to store WCSS values
+wcss_values <- numeric(length(k_range))
+# Loop through the range of k values and compute the WCSS
+for (k in k_range) {
+  kmeans_result <- kmeans(norm_PL_num, centers = k, nstart = 500) 
+  #nstart means checking 500 possible first assignments
+  wcss_values[k] <- kmeans_result$tot.withinss
+}
+
+#Plot the elbow chart
+# Create a data frame with k and WCSS values
+elbow_data <- data.frame(k = k_range, WCSS = wcss_values)
+# Plot the elbow chart using ggplot2
+ggplot(elbow_data, aes(x = k, y = WCSS)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = k_range) +
+  labs(title = "Elbow Method", x = "Number of Clusters (k)", 
+       y = "Within-Cluster Sum of Squares (WCSS)") +
+  theme_minimal()
+```
+
+##### Apply K-means Clustering
+```{r}
+# Because the information we got from making the elbow chart was not helpful so 
+# we will take a look at the data
+set.seed(888)
+km <- kmeans(norm_PL_num, 3, nstart = 1000)
+km$centers
+#decided to do 3 clusters
+# Add the cluster assignments to the data set
+df_cleaned_with_clusters <- cbind(df_cleaned, Cluster = km$cluster)
+head(df_cleaned_with_clusters)
+```
+
+##### Clusters Visualization
+```{r}
+#Change character to factors (for the visualization purpose only)
+df_cleaned_with_clusters$Personal.Loan <- as.factor(df_cleaned_with_clusters$Personal.Loan)
+df_cleaned_with_clusters$Securities.Account <- as.factor(df_cleaned_with_clusters$Securities.Account)
+df_cleaned_with_clusters$CD.Account <- as.factor(df_cleaned_with_clusters$CD.Account)
+df_cleaned_with_clusters$Online <- as.factor(df_cleaned_with_clusters$Online)
+df_cleaned_with_clusters$CreditCard <- as.factor(df_cleaned_with_clusters$CreditCard)
+
+
+########plot numeric
+ggplot(df_cleaned_with_clusters) + geom_point(aes(x = Cluster, y = Age, 
+                                          color = as.factor(Cluster),
+                                          size = Age))
+ggplot(df_cleaned_with_clusters, aes(x = factor(Cluster), y = Experience, fill = factor(Cluster))) +
+  geom_boxplot() +
+  labs(x = "Cluster", y = "Experience", title = "Box plot of Years of Experience by Cluster") +
+  theme_minimal()
+ggplot(df_cleaned_with_clusters, aes(x = factor(Cluster), y = Income, fill = factor(Cluster))) +
+  geom_boxplot() +
+  labs(x = "Cluster", y = "Income", title = "Box plot of Income by Cluster") +
+  theme_minimal()
+ggplot(df_cleaned_with_clusters, aes(x = factor(Cluster), y = Family, fill = factor(Cluster))) +
+  geom_boxplot() +
+  labs(x = "Cluster", y = "Family", title = "Box plot of Size of Family by Cluster") +
+  theme_minimal()
+ggplot(df_cleaned_with_clusters, aes(x = factor(Cluster), y = CCAvg, fill = factor(Cluster))) +
+  geom_boxplot() +
+  labs(x = "Cluster", y = "CCAvg", title = "Box plot of Avg. spending on credit cards per month by Cluster") +
+  theme_minimal()
+ggplot(df_cleaned_with_clusters, aes(x = factor(Cluster), y = Mortgage, fill = factor(Cluster))) +
+  geom_boxplot() +
+  labs(x = "Cluster", y = "Mortgage", title = "Box plot of Value of house mortgage by Cluster") +
+  theme_minimal()
+
+
+########plot characters
+colnames(df_cleaned_with_clusters)
+#Age
+ggplot(df_cleaned_with_clusters, aes(x = Age, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Age By Clusters", x = "Age", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Education
+ggplot(df_cleaned_with_clusters, aes(x = Education, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Experience By Clusters", x = "Experience", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Personal.Loan
+ggplot(df_cleaned_with_clusters, aes(x = Personal.Loan, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Personal Loan By Clusters", x = "Personal.Loan", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Securities.Account
+ggplot(df_cleaned_with_clusters, aes(x = Securities.Account, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Securities Account By Clusters", x = "Securities.Account", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+#CD.Account
+ggplot(df_cleaned_with_clusters, aes(x = CD.Account, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = " CD Account By Clusters", x = " CD.Account", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Online
+ggplot(df_cleaned_with_clusters, aes(x = Online, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Online By Clusters", x = "Online", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+#CreditCard
+ggplot(df_cleaned_with_clusters, aes(x = CreditCard, fill = as.factor(Cluster))) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Credit Card By Clusters", x = "Credit Card", fill = "Cluster") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+Based on the result of clustering, we identified three different clusters. 
+* Cluster "Big Fam" -- Tend to be more young-mid age,  compare to other cluster they are more likely to have a big family.
+
+* Cluster "Salariat" -- Mostly are mid-senior age. Mostly like to be middle class family. This group tend to have most professional experiences. This group has the most people who are having more 20 years of professional experiences. Have the highest probability of having a security account with the bank. 
+
+* Cluster "Investors" -- Age range in this group is the most wide, tend to have a higher income, some of their major income might from doing different investments instead of a regular 9-5 job, or beside their regular income they are more likely to do investments on different things. Tend to have a small family. More likely to have Certificate of deposit account, and personal loans.
+
+### Part 4: Business Insights and Applications
+##### The bank can based on each cluster group's characteristics to promote different functions loan:
+
+###### For "Big Fam":
+* Home Improvement Loans
+* Wedding Loans, Vacation Loans 
+* Debt Consolidation Loan 
+* Wedding Loans
+* Vacation Loans
+* Student Loans
+
+###### For "Salariat"
+* Medical Loans
+* Retirement Products 
+* Debt Consolidation Loan 
+* Vacation Loans
+* Home Improvement Loans
+
+###### For "Investors"
+* Wealth Management/Financial Planning
+* Investment Product (Certificates of  Deposit, Mutual Funds, etc)
+* Insurance Products
+* Vacation Loans
+
+##### Here are the recommendations based on the analysis of classification models:
+###### 1. Customized Loan for higher income customers
+Our analysis shows that customers with higher income levels are more likely to take out personal loans. This may be because they have a higher ability to manage the additional financial burden of a loan. They may also have more disposable income to undertake personal projects, business investments, etc. Banks can promote customized loan products for this customer segment, such as attractive interest rates and flexible repayment options, to further increase the likelihood of converting high-income indebted customers into personal loan customers.
+
+###### 2. Financial Education Programs
+We have also found that customers with higher levels of education are more likely to accept personal loans than those with lower levels of education. This may be because less educated individuals may have limited access to information about various financial products and services, making them less aware of the benefits of personal loans. Therefore, we believe that implementing financial education programs for customers with lower levels of education could help them better understand the benefits and risks associated with personal loans. By improving financial literacy, banks have the potential to convert more indebted customers into personal loan customers and to cultivate long-term relationships with customers.
+
+###### 3. Understanding customers’ spending habits
+As can be seen from the proportional bar plot in the Naive Bayesian analysis, customers with higher average credit card spending (CCAVG) are indeed more likely to accept personal loans because they are already comfortable with credit facilities. By understanding the spending patterns of these customers, banks can gain valuable insights and offer personal loans that are tailored to specific needs, making loan offers more targeted and attractive.
+
+###### 4. Utilize customers’ existing relationship with the Bank
+Customers with an existing relationship with the bank are often more likely to accept a personal loan offer than new customers. And they can reduce acquisition costs because the marketing costs of developing new customers are high. In our dataset, customers who have a certificate of deposit account with the bank are more likely to accept a personal loan than those who do not have an account. Banks can use this existing relationship to increase the likelihood of accepting a personal loan and to strengthen customer loyalty.
+
+
+
+
+
